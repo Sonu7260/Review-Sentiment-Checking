@@ -4,23 +4,51 @@ from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 
-# 1. Dynamic Path Resolution configured to your specific filename
+# 1. Dynamic Path Resolution with Fallback System
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 vectorizer_path = os.path.join(BASE_DIR, 'vectorizer.pkl')
-model_path = os.path.join(BASE_DIR, 'logistic_pkl (1)')  # Match your exact file name
 
-# Load the vectorizer and model safely
+# A list of possible names the model file might have on your server
+possible_model_names = [
+    'logistic_pkl (1)',
+    'logistic_pkl (1).pkl',
+    'logistic_pkl',
+    'logistic_model.pkl',
+    'model.pkl'
+]
+
+vectorizer = None
+model = None
+chosen_model_name = None
+
+# Attempt to load the vectorizer
 try:
-    with open(vectorizer_path, 'rb') as f:
-        vectorizer = pickle.load(f)
-    with open(model_path, 'rb') as f:
-        model = pickle.load(f)
-    print("Success: Model and vectorizer loaded successfully!")
+    if os.path.exists(vectorizer_path):
+        with open(vectorizer_path, 'rb') as f:
+            vectorizer = pickle.load(f)
 except Exception as e:
-    print(f"Error loading pickle files: {e}")
-    print(f"Current Directory Contents: {os.listdir(BASE_DIR)}")  # Helps debug what files actually exist on Render
-    vectorizer = None
-    model = None
+    print(f"Error loading vectorizer: {e}")
+
+# Attempt to load the model by trying various name possibilities
+for name in possible_model_names:
+    potential_path = os.path.join(BASE_DIR, name)
+    if os.path.exists(potential_path):
+        try:
+            with open(potential_path, 'rb') as f:
+                model = pickle.load(f)
+            chosen_model_name = name
+            print(f"Success: Model loaded successfully using filename: {name}")
+            break
+        except Exception as e:
+            print(f"Found {name} but failed to parse pickle: {e}")
+
+# If it still fails, print out exactly what files Render can see to help you debug
+if model is None:
+    print("🚨 CRITICAL ERROR: Could not find your model file anywhere.")
+    try:
+        print(f"Here is a list of ALL files actually inside your project folder: {os.listdir(BASE_DIR)}")
+    except Exception:
+        pass
 
 # 2. Combined HTML/CSS/JS Frontend Template
 HTML_TEMPLATE = """
@@ -112,7 +140,6 @@ HTML_TEMPLATE = """
             const predictionText = document.getElementById('predictionText');
             const confidenceText = document.getElementById('confidenceText');
 
-            // Reset States
             errorContainer.classList.add('hidden');
             resultContainer.classList.add('hidden');
             
@@ -170,8 +197,10 @@ def home():
 @app.route('/predict', methods=['POST'])
 def predict():
     if vectorizer is None or model is None:
+        # If it still fails, the API response will print out exactly what files are in the directory
+        current_files = os.listdir(BASE_DIR) if os.path.exists(BASE_DIR) else []
         return jsonify({
-            'error': f'Model load mismatch. Looking for: "{model_path}". Check server logs for exact folder directory structure.'
+            'error': f'Model configuration error. Server files detected: {current_files}. Make sure your model file matches one of these names exactly.'
         }), 500
     
     data = request.get_json() or {}
@@ -181,15 +210,12 @@ def predict():
         return jsonify({'error': 'Please enter some text to analyze.'}), 400
     
     try:
-        # Vectorize and Predict
         vectorized_text = vectorizer.transform([user_text])
         prediction = model.predict(vectorized_text)[0]
         
-        # Calculate Confidence Scores
         probabilities = model.predict_proba(vectorized_text)[0]
         confidence = max(probabilities) * 100
         
-        # Binary Classification Mapping
         result_label = "Positive" if prediction == 1 else "Negative"
         
         return jsonify({
