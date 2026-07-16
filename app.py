@@ -181,21 +181,17 @@ def predict():
     try:
         # Vectorize and Predict
         vectorized_text = vectorizer.transform([user_text])
-        prediction = model.predict(vectorized_text)[0]
+        raw_prediction = model.predict(vectorized_text)[0]
         
         # Calculate Confidence Scores
         probabilities = model.predict_proba(vectorized_text)[0]
         confidence = max(probabilities) * 100
         
-        # --- DEBUG LOGGING ON RENDER CONSOLE ---
-        # Look at your Render Live Logs to see these outputs when you submit text
-        print(f"[DEBUG LOG] Input Text: '{user_text}'")
-        print(f"[DEBUG LOG] Raw Prediction Value: {prediction}")
-        print(f"[DEBUG LOG] Class Probabilities [Class 0, Class 1]: {probabilities}")
+        # Clean the string prediction and normalize case handling
+        pred_string = str(raw_prediction).strip().lower()
         
-        # CRITICAL FIX STEP: If your model treats 0 as Positive and 1 as Negative,
-        # flip the labels below to perfectly match your training data intent!
-        if int(prediction) == 1:
+        # Directly match the string output instead of converting to an integer
+        if "positive" in pred_string:
             result_label = "Positive"
         else:
             result_label = "Negative"
