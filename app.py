@@ -4,51 +4,22 @@ from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 
-# 1. Dynamic Path Resolution with Fallback System
+# 1. Exact Path Mappings from your Server Directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-vectorizer_path = os.path.join(BASE_DIR, 'vectorizer.pkl')
+vectorizer_path = os.path.join(BASE_DIR, 'vectorizer_pkl.pkl')
+model_path = os.path.join(BASE_DIR, 'logistic_pkl (1).pkl')
 
-# A list of possible names the model file might have on your server
-possible_model_names = [
-    'logistic_pkl (1)',
-    'logistic_pkl (1).pkl',
-    'logistic_pkl',
-    'logistic_model.pkl',
-    'model.pkl'
-]
-
-vectorizer = None
-model = None
-chosen_model_name = None
-
-# Attempt to load the vectorizer
+# Load the vectorizer and model safely using exact filenames
 try:
-    if os.path.exists(vectorizer_path):
-        with open(vectorizer_path, 'rb') as f:
-            vectorizer = pickle.load(f)
+    with open(vectorizer_path, 'rb') as f:
+        vectorizer = pickle.load(f)
+    with open(model_path, 'rb') as f:
+        model = pickle.load(f)
+    print("Success: Model and vectorizer loaded successfully!")
 except Exception as e:
-    print(f"Error loading vectorizer: {e}")
-
-# Attempt to load the model by trying various name possibilities
-for name in possible_model_names:
-    potential_path = os.path.join(BASE_DIR, name)
-    if os.path.exists(potential_path):
-        try:
-            with open(potential_path, 'rb') as f:
-                model = pickle.load(f)
-            chosen_model_name = name
-            print(f"Success: Model loaded successfully using filename: {name}")
-            break
-        except Exception as e:
-            print(f"Found {name} but failed to parse pickle: {e}")
-
-# If it still fails, print out exactly what files Render can see to help you debug
-if model is None:
-    print("🚨 CRITICAL ERROR: Could not find your model file anywhere.")
-    try:
-        print(f"Here is a list of ALL files actually inside your project folder: {os.listdir(BASE_DIR)}")
-    except Exception:
-        pass
+    print(f"Error loading pickle files: {e}")
+    vectorizer = None
+    model = None
 
 # 2. Combined HTML/CSS/JS Frontend Template
 HTML_TEMPLATE = """
@@ -197,10 +168,8 @@ def home():
 @app.route('/predict', methods=['POST'])
 def predict():
     if vectorizer is None or model is None:
-        # If it still fails, the API response will print out exactly what files are in the directory
-        current_files = os.listdir(BASE_DIR) if os.path.exists(BASE_DIR) else []
         return jsonify({
-            'error': f'Model configuration error. Server files detected: {current_files}. Make sure your model file matches one of these names exactly.'
+            'error': f'Model load mismatch. Server files detected: {os.listdir(BASE_DIR)}.'
         }), 500
     
     data = request.get_json() or {}
